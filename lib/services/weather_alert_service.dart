@@ -2,7 +2,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:math' as math;
-import 'synthetic_radar_service.dart';
+import '../data/models/storm_nucleus.dart';
 
 enum AlertLevel {
   yellow, // 🟡 30+ dBZ, ≤75 km

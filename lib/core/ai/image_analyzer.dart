@@ -6,6 +6,7 @@ import '../../data/models/radar_data.dart';
 import '../../data/models/storm_nucleus.dart';
 import '../../data/models/analysis_result.dart';
 import '../../services/synthetic_cloud_generator.dart';
+import 'geolocation_engine.dart';
 import 'tflite_storm_detector.dart';
 
 class ImageAnalyzer {
@@ -80,6 +81,12 @@ class ImageAnalyzer {
     final width = radarImage.width;
     final height = radarImage.height;
     final visited = List.generate(height, (_) => List.filled(width, false));
+    final geoEngine = GeolocationEngine(
+      southWest: southWest,
+      northEast: northEast,
+      imageWidth: width,
+      imageHeight: height,
+    );
 
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
@@ -123,6 +130,7 @@ class ImageAnalyzer {
               centerX: normalizedX,
               centerY: normalizedY,
               radiusPixels: avgRadius,
+              radiusKm: geoEngine.estimateRadiusKm(region.pixels.length),
             ));
           }
         }

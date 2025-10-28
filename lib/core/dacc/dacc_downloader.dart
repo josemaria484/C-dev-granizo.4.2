@@ -62,8 +62,8 @@ class DACCDownloader {
     // 3. Crear objeto RadarData
     final radarData = RadarData(
       imageBytes: imageBytes,
-      downloadedAt: DateTime.now(),
-      sourceUrl: 'DACC Latest - Mendoza',
+      timestamp: DateTime.now(),
+      source: 'DACC Latest - Mendoza',
     );
 
     // 4. Guardar en cache

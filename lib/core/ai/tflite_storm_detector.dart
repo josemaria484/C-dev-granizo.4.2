@@ -16,7 +16,7 @@ class TFLiteStormDetector {
 
     try {
       _interpreter = await Interpreter.fromAsset(
-        'assets/models/storm_detector.tflite',
+        'models/storm_detector.tflite',
       );
       _interpreter!.allocateTensors();
       _initialized = true;

@@ -1,13 +1,19 @@
-// Archivo listo para copiar y pegar en Android Studio.
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle, ByteData;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:image/image.dart' as img;
+
+import 'core/ai/image_analyzer.dart';
+import 'core/dacc/dacc_downloader.dart';
+import 'data/models/analysis_result.dart';
+import 'data/models/radar_data.dart';
+import 'data/models/storm_nucleus.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,19 +46,20 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   final MapController _mapController = MapController();
-  LatLng _center = const LatLng(-34.6177, -68.3301); // San Rafael, Mendoza
+  LatLng _center = const LatLng(-34.6177, -68.3301);
   double _zoom = 9.5;
 
   Uint8List? _overlayBytes;
-
-  // Bounds del overlay “nubes sintéticas”. Ajustá si tu PNG usa otros límites.
-  // Sur/Oeste/Norte/Este en grados decimales.
-  static final LatLngBounds _overlayBounds = LatLngBounds.fromPoints(const [
-    LatLng(-35.20, -69.15), // S, W
-    LatLng(-35.20, -67.50), // S, E
-    LatLng(-34.05, -67.50), // N, E
-    LatLng(-34.05, -69.15), // N, W
+  LatLngBounds _overlayBounds = LatLngBounds.fromPoints(const [
+    LatLng(-36.0, -70.0),
+    LatLng(-36.0, -66.5),
+    LatLng(-33.0, -66.5),
+    LatLng(-33.0, -70.0),
   ]);
+
+  bool _isLoading = false;
+  String? _statusMessage;
+  List<StormNucleus> _nuclei = const [];
 
   @override
   void initState() {
@@ -61,40 +68,98 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _loadInitialData() async {
-    await _loadOverlayPng();
-    setState(() {});
+    await _refreshRadar(forceRefresh: false);
   }
 
-  /// Carga un PNG de overlay desde assets si existe.
-  /// Si no existe, genera un PNG 1x1 100% transparente.
-  Future<void> _loadOverlayPng() async {
-    Uint8List? bytes;
+  Future<void> _refreshRadar({required bool forceRefresh}) async {
+    if (_isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+      _statusMessage = 'Actualizando radar...';
+    });
+
     try {
-      // Cambiá el path si tu dataset usa otro nombre.
-      final ByteData bd = await rootBundle.load('assets/datasets/last.png');
-      bytes = bd.buffer.asUint8List();
-    } catch (_) {
-      // Genera PNG transparente 1x1 para no romper el OverlayImageLayer.
-      final img.Image transparent = img.Image(1, 1);
-      transparent.fill(img.getColor(0, 0, 0, 0));
-      bytes = Uint8List.fromList(img.encodePng(transparent));
+      final (radarData, result) =
+          await DACCDownloader.getLatestRadar(forceRefresh: forceRefresh);
+
+      final RadarData effectiveData = radarData ?? await _loadFallbackRadar();
+
+      final AnalysisResult analysis = await ImageAnalyzer.analyzeRadarImage(
+        radarData: effectiveData,
+        minDbz: 30,
+        minPixels: 400,
+        generateOverlay: true,
+      );
+
+      _nuclei = analysis.nuclei;
+      _overlayBounds = _boundsFromRadar(effectiveData.bounds);
+
+      if (analysis.uiOverlayImage != null) {
+        _overlayBytes = await _encodeOverlay(analysis.uiOverlayImage!);
+      } else {
+        _overlayBytes = null;
+      }
+
+      _statusMessage = _buildStatusMessage(effectiveData, result, _nuclei.length);
+    } catch (e) {
+      _statusMessage = 'No se pudo actualizar el radar';
+      if (_overlayBytes == null) {
+        final fallback = await _loadFallbackRadar();
+        final analysis = await ImageAnalyzer.analyzeRadarImage(
+          radarData: fallback,
+          minDbz: 30,
+          minPixels: 400,
+          generateOverlay: true,
+        );
+        if (analysis.uiOverlayImage != null) {
+          _overlayBytes = await _encodeOverlay(analysis.uiOverlayImage!);
+          _overlayBounds = _boundsFromRadar(fallback.bounds);
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
-    _overlayBytes = bytes;
+  }
+
+  Future<RadarData> _loadFallbackRadar() async {
+    final data = await rootBundle.load('assets/testdata/radar_test.png');
+    return RadarData(
+      imageBytes: data.buffer.asUint8List(),
+      timestamp: DateTime.now(),
+      source: 'assets/testdata/radar_test.png',
+      bounds: RadarBounds.defaultMendoza,
+    );
+  }
+
+  LatLngBounds _boundsFromRadar(RadarBounds bounds) {
+    return LatLngBounds.fromPoints([
+      LatLng(bounds.southWest.latitude, bounds.southWest.longitude),
+      LatLng(bounds.southWest.latitude, bounds.northEast.longitude),
+      LatLng(bounds.northEast.latitude, bounds.northEast.longitude),
+      LatLng(bounds.northEast.latitude, bounds.southWest.longitude),
+    ]);
+  }
+
+  Future<Uint8List> _encodeOverlay(ui.Image image) async {
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (byteData == null) {
+      throw StateError('No se pudo codificar el overlay');
+    }
+    return byteData.buffer.asUint8List();
   }
 
   Future<void> _onRefresh() async {
-    // En tu app real, acá gatillás:
-    // - descarga DACC
-    // - análisis IA local
-    // - regeneración del PNG con alfa
-    await _loadOverlayPng();
-    if (mounted) setState(() {});
+    await _refreshRadar(forceRefresh: true);
   }
 
   Future<void> _goToMyLocation() async {
     final bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      // No fuerza UI. Solo retorna.
       return;
     }
 
@@ -108,24 +173,43 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     final Position pos =
-    await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+        await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
 
     _center = LatLng(pos.latitude, pos.longitude);
     _zoom = 12.0;
     if (mounted) {
       setState(() {});
-      // flutter_map 6.x: move/rotate/zoom con MapController
       _mapController.move(_center, _zoom);
     }
   }
 
   Future<void> _shareMapLink() async {
-    // Sin dependencias nuevas. Usa url_launcher para abrir Play Store o link público.
     final Uri uri = Uri.parse(
-        'https://play.google.com/store/apps/details?id=com.josecastillo.granizo');
+      'https://play.google.com/store/apps/details?id=com.josecastillo.granizo',
+    );
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
+  }
+
+  String _buildStatusMessage(
+    RadarData data,
+    DownloadResult result,
+    int nucleiCount,
+  ) {
+    final buffer = StringBuffer();
+    buffer.write('Fuente: ${data.sourceUrl}');
+    buffer.write(' · ');
+    buffer.write('Actualizado hace ${data.ageInMinutes} min');
+    if (result == DownloadResult.usedCache) {
+      buffer.write(' (cache)');
+    } else if (result == DownloadResult.noInternet) {
+      buffer.write(' (sin internet)');
+    }
+    if (nucleiCount > 0) {
+      buffer.write(' · Núcleos: $nucleiCount');
+    }
+    return buffer.toString();
   }
 
   @override
@@ -143,28 +227,44 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
             children: [
-              // Capa base. No usar TileLayer.opacity según regla dura.
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.josecastillo.granizo',
-                subdomains: const [],
               ),
-
-              // Overlay de nubes sintéticas usando alfa del PNG.
               if (_overlayBytes != null)
                 OverlayImageLayer(
                   overlayImages: [
                     OverlayImage(
                       bounds: _overlayBounds,
                       imageProvider: MemoryImage(_overlayBytes!),
-                      // No establecer opacity aquí. El alfa viene en el PNG.
                     ),
                   ],
                 ),
             ],
           ),
-
-          // Botones: mantener posiciones y orden.
+          if (_isLoading)
+            const Center(
+              child: CircularProgressIndicator(),
+            ),
+          if (_statusMessage != null)
+            Positioned(
+              left: 16,
+              right: 16,
+              top: 48,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black87.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Text(
+                    _statusMessage!,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             right: 16,
             bottom: 16,
@@ -172,9 +272,9 @@ class _MapScreenState extends State<MapScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _CircleButton(
-                  tooltip: 'Refrescar',
+                  tooltip: _isLoading ? 'Actualizando…' : 'Refrescar',
                   icon: Icons.refresh,
-                  onPressed: _onRefresh,
+                  onPressed: _isLoading ? null : _onRefresh,
                 ),
                 const SizedBox(height: 12),
                 _CircleButton(
@@ -200,7 +300,7 @@ class _MapScreenState extends State<MapScreen> {
 class _CircleButton extends StatelessWidget {
   final String tooltip;
   final IconData icon;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
 
   const _CircleButton({
     required this.tooltip,
