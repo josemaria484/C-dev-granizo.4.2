@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
-import 'synthetic_radar_service.dart';
+import '../data/models/storm_nucleus.dart';
 
 class RadarAITrainer {
   static const String _trainingDir = 'radar_training';
@@ -45,12 +45,12 @@ class RadarAITrainer {
       ) {
     final nucleiJson = nuclei
         .map((n) => {
-      'lat': n.center.latitude,
-      'lon': n.center.longitude,
-      'dbz': n.maxDbz,
-      'type': n.type.toString(),
-      'radius_km': n.radiusKm,
-    })
+              'lat': n.center.latitude,
+              'lon': n.center.longitude,
+              'dbz': n.maxDbz,
+              'type': n.type.name,
+              'radius_km': n.radiusKm,
+            })
         .toList();
 
     return '''
