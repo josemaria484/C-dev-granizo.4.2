@@ -1,0 +1,30 @@
+# Archivo listo para copiar y pegar en Android Studio.
+name: granizo
+description: Aplicación de alertas de granizo en Mendoza
+publish_to: 'none'
+
+environment:
+  sdk: '^3.9.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_map: 6.2.1
+  latlong2: 0.9.1
+  geolocator: ^10.1.0
+  url_launcher: ^6.0.0
+  image: 3.3.0
+  tflite_flutter: ^0.10.4
+  share_plus: ^7.0.0
+  flutter_local_notifications: ^17.0.0
+  permission_handler: ^11.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/models/
+    - assets/testdata/
+
+dependency_overrides:
+  tflite_flutter:
+    path: third_party/tflite_flutter-0.10.4

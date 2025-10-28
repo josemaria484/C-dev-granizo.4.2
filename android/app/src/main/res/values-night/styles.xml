@@ -1,0 +1,12 @@
+diff --git a/android/app/src/main/res/values-night/styles.xml b/android/app/src/main/res/values-night/styles.xml
+    new file mode 100644
+    index 0000000000000000000000000000000000000000..2c98219cc4efab687542cbc5b692d35d840c8394
+    --- /dev/null
+    +++ b/android/app/src/main/res/values-night/styles.xml
+    @@ -0,0 +1,6 @@
+    +<?xml version="1.0" encoding="utf-8"?>
+    +<resources>
+    +    <style name="NormalTheme" parent="Theme.Material3.DayNight.NoActionBar">
+    +        <item name="android:windowBackground">@android:color/black</item>
+    +    </style>
+    +</resources>
